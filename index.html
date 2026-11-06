@@ -20,7 +20,6 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    // 最高优先级：防泄露与墨大学术规范 System Prompt
     const SYSTEM_PROMPT = `
 ## Role & Identity
 你是一个专业的 Task2 论文写作辅助助手，专门帮助霍桑语言班客户完成与其专业相关的 Task2 研究论文。你的核心目标是引导客户完成高质量、符合学术规范的论文写作。
@@ -51,27 +50,24 @@
     const ADMIN_SECRET = "xin20261106";
 
     function App() {
-      // 身份与权限状态
       const [userEmail, setUserEmail] = useState('');
       const [isAuthenticated, setIsAuthenticated] = useState(false);
       const [whitelist, setWhitelist] = useState(() => {
         const saved = localStorage.getItem('task2_whitelist');
-        return saved ? JSON.parse(saved) : ['demo@student.edu', 'test@hawthorn.com'];
+        return saved ? JSON.parse(saved) : ['demo@student.edu', 'naixinli08@gmail.com'];
       });
 
-      // API Key 管理（保存在管理员本地）
       const [apiKey, setApiKey] = useState(() => {
         return localStorage.getItem('task2_api_key') || '';
       });
 
-      // 管理员控制台
-      const [showAdminModal, setShowAdminModal] = useState(false);
+      // 视图控制状态: 'landing'(双按钮首页) | 'student_login' | 'admin_login' | 'admin_panel' | 'chat'
+      const [viewState, setViewState] = useState('landing');
+      
       const [adminPasswordInput, setAdminPasswordInput] = useState('');
-      const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
       const [newEmailInput, setNewEmailInput] = useState('');
       const [tempApiKeyInput, setTempApiKeyInput] = useState('');
 
-      // 聊天与 UI 状态
       const [messages, setMessages] = useState([
         { 
           role: 'assistant', 
@@ -83,7 +79,6 @@
       const [showStateCard, setShowStateCard] = useState(true);
       const messagesEndRef = useRef(null);
 
-      // 持久化保存
       useEffect(() => {
         localStorage.setItem('task2_whitelist', JSON.stringify(whitelist));
       }, [whitelist]);
@@ -92,46 +87,33 @@
         localStorage.setItem('task2_api_key', apiKey);
       }, [apiKey]);
 
-      // 隐形快捷键 (Ctrl+Shift+A 或 Cmd+Shift+A)
-      useEffect(() => {
-        const handleKeyDown = (e) => {
-          if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
-            e.preventDefault();
-            setShowAdminModal(true);
-          }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-      }, []);
-
       useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, [messages]);
 
-      // 客户登录校验
-      const handleLogin = (e) => {
+      // 学生登录校验
+      const handleStudentLogin = (e) => {
         e.preventDefault();
         const cleanEmail = userEmail.trim().toLowerCase();
         if (whitelist.map(e => e.toLowerCase()).includes(cleanEmail)) {
           setIsAuthenticated(true);
         } else {
-          alert('⚠️ 该邮箱未获授权！请联系客服或管理员开通白名单。');
+          alert('⚠️ 该邮箱未获授权！请联系课程顾问开通白名单。');
         }
       };
 
-      // 管理员登录校验
+      // 管理员密码校验
       const handleAdminVerify = (e) => {
         e.preventDefault();
         if (adminPasswordInput === ADMIN_SECRET) {
-          setIsAdminAuthenticated(true);
           setAdminPasswordInput('');
           setTempApiKeyInput(apiKey);
+          setViewState('admin_panel');
         } else {
-          alert('管理员密码错误！');
+          alert('教师/管理员密码错误！');
         }
       };
 
-      // 添加白名单邮箱
       const handleAddEmail = (e) => {
         e.preventDefault();
         if (!newEmailInput || !newEmailInput.includes('@')) {
@@ -147,14 +129,12 @@
         }
       };
 
-      // 保存 API Key
       const handleSaveApiKey = (e) => {
         e.preventDefault();
         setApiKey(tempApiKeyInput.trim());
         alert('API Key 配置更新成功！大模型算力已激活。');
       };
 
-      // 发送消息并调用 API / 模拟响应
       const handleSend = async (e) => {
         e.preventDefault();
         if (!inputMsg.trim() || isGenerating) return;
@@ -165,7 +145,6 @@
         setInputMsg('');
         setIsGenerating(true);
 
-        // 如果配置了 API Key，直接调用 OpenAI 接口
         if (apiKey && apiKey.startsWith('sk-')) {
           try {
             const apiMessages = [
@@ -196,42 +175,66 @@
           } catch (err) {
             setMessages([...newMsgs, { 
               role: 'assistant', 
-              content: `⚠️ [API接口调用提示]: ${err.message}\n(请检查管理员后台设置的 API Key 是否有效，或联系管理员更新。)` 
+              content: `⚠️ [API接口调用提示]: ${err.message}\n(请检查管理员后台设置的 API Key 是否有效)` 
             }]);
           } finally {
             setIsGenerating(false);
           }
         } else {
-          // 未配置 Key 时的演示流程响应
           setTimeout(() => {
-            let reply = '';
-            const lower = userText.toLowerCase();
-
-            if (lower.includes('系统提示词') || lower.includes('system prompt') || lower.includes('设定是什么')) {
-              reply = '我是您的专属 Task2 论文写作辅助助手。请提供您的专业与论文需求，我们开始推进论文流程。';
-            } else {
-              reply = `[演示模式响应] 收到！已记录您提供的信息。\n\n提示：目前系统处于演示模式。管理员可在后台配置 OpenAI API Key 激活全量 AI 算力，激活后系统将为您生成基于墨大 APA7 规范的 1500-2000 字定制化论文与 20 篇英文文献列表！`;
-            }
-
+            let reply = `[演示模式响应] 收到！已记录您提供的信息。\n\n提示：当前系统处于演示模式。教师可在后台配置 OpenAI API Key 激活全量 AI 算力！`;
             setMessages([...newMsgs, { role: 'assistant', content: reply }]);
             setIsGenerating(false);
           }, 1000);
         }
       };
 
-      if (!isAuthenticated) {
+      // 1. 首页双按钮选择界面
+      if (!isAuthenticated && viewState === 'landing') {
         return (
           <div class="flex items-center justify-center min-h-screen bg-slate-950 p-4">
-            <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl">
-              <div class="text-center mb-6">
-                <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600/20 text-indigo-400 mb-4 border border-indigo-500/30">
-                  <i data-lucide="graduation-cap" class="w-8 h-8"></i>
-                </div>
+            <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl text-center space-y-6">
+              <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
+                <i data-lucide="graduation-cap" class="w-8 h-8"></i>
+              </div>
+              <div>
                 <h1 class="text-2xl font-bold text-white">Task2 论文写作智能助手</h1>
                 <p class="text-slate-400 text-sm mt-2">霍桑语言班专属商业辅助平台</p>
               </div>
 
-              <form onSubmit={handleLogin} class="space-y-4">
+              <div class="space-y-3 pt-2">
+                <button 
+                  onClick={() => setViewState('student_login')}
+                  class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-3 text-base"
+                >
+                  <i data-lucide="user" class="w-5 h-5"></i> 学生/客户登录
+                </button>
+                <button 
+                  onClick={() => setViewState('admin_login')}
+                  class="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-xl border border-slate-700 transition flex items-center justify-center gap-3 text-sm"
+                >
+                  <i data-lucide="shield-check" class="w-5 h-5 text-amber-400"></i> 教师/管理员后台登录
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // 2. 学生登录界面
+      if (!isAuthenticated && viewState === 'student_login') {
+        return (
+          <div class="flex items-center justify-center min-h-screen bg-slate-950 p-4">
+            <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl">
+              <button onClick={() => setViewState('landing')} class="text-xs text-slate-400 hover:text-white mb-6 flex items-center gap-1">
+                ← 返回上级
+              </button>
+              <div class="text-center mb-6">
+                <h1 class="text-xl font-bold text-white">学生授权登录</h1>
+                <p class="text-slate-400 text-xs mt-1">请输入您的授权邮箱进入系统</p>
+              </div>
+
+              <form onSubmit={handleStudentLogin} class="space-y-4">
                 <div>
                   <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">授权学生邮箱</label>
                   <input 
@@ -240,98 +243,128 @@
                     placeholder="yourname@university.edu"
                     value={userEmail}
                     onChange={(e) => setUserEmail(e.target.value)}
-                    class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                    class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm"
                   />
                 </div>
                 <button 
                   type="submit"
-                  class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2"
+                  class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl shadow-lg transition text-sm"
                 >
-                  验证身份并进入系统 <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                  验证进入写作系统
                 </button>
               </form>
-              <p class="text-xs text-center text-slate-500 mt-6">
-                未获授权用户无法访问。如需开通使用权限，请联系课程顾问。
-              </p>
             </div>
-
-            {/* 管理员隐形控制台弹窗 */}
-            {showAdminModal && (
-              <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl space-y-4">
-                  <div class="flex justify-between items-center pb-2 border-b border-slate-800">
-                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                      <i data-lucide="shield-check" class="text-indigo-400"></i> 管理员控制台
-                    </h3>
-                    <button onClick={() => setShowAdminModal(false)} class="text-slate-400 hover:text-white">✕</button>
-                  </div>
-
-                  {!isAdminAuthenticated ? (
-                    <form onSubmit={handleAdminVerify} class="space-y-4">
-                      <p class="text-xs text-slate-400">请输入超级管理员密码：</p>
-                      <input 
-                        type="password"
-                        required
-                        placeholder="超级管理员密码"
-                        value={adminPasswordInput}
-                        onChange={(e) => setAdminPasswordInput(e.target.value)}
-                        class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm"
-                      />
-                      <button type="submit" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium text-sm">确认登录后台</button>
-                    </form>
-                  ) : (
-                    <div class="space-y-6">
-                      {/* API Key 设置 */}
-                      <div class="space-y-2">
-                        <label class="block text-xs font-semibold text-slate-300">🔑 绑定的 OpenAI API Key (大模型算力核心)</label>
-                        <form onSubmit={handleSaveApiKey} class="flex gap-2">
-                          <input 
-                            type="password"
-                            placeholder="sk-..."
-                            value={tempApiKeyInput}
-                            onChange={(e) => setTempApiKeyInput(e.target.value)}
-                            class="flex-1 px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
-                          />
-                          <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-medium">保存 Key</button>
-                        </form>
-                        <p class="text-[11px] text-slate-500">此 Key 储存在你的本地浏览器中，填入后系统将自动激活大模型全量算力。</p>
-                      </div>
-
-                      {/* 白名单邮箱管理 */}
-                      <div class="space-y-2 pt-2 border-t border-slate-800">
-                        <label class="block text-xs font-semibold text-slate-300">📧 客户授权白名单管理</label>
-                        <form onSubmit={handleAddEmail} class="flex gap-2">
-                          <input 
-                            type="email"
-                            placeholder="添加新客户邮箱..."
-                            value={newEmailInput}
-                            onChange={(e) => setNewEmailInput(e.target.value)}
-                            class="flex-1 px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
-                          />
-                          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-medium">添加授权</button>
-                        </form>
-
-                        <div class="max-h-40 overflow-y-auto space-y-1.5 pt-2">
-                          {whitelist.map((email) => (
-                            <div key={email} class="flex items-center justify-between bg-slate-800/60 px-3 py-1.5 rounded-lg text-xs text-slate-200 border border-slate-700/50">
-                              <span>{email}</span>
-                              <button onClick={() => setWhitelist(whitelist.filter(e => e !== email))} class="text-rose-400 hover:text-rose-300 text-xs">移除</button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         );
       }
 
+      // 3. 管理员密码输入界面
+      if (!isAuthenticated && viewState === 'admin_login') {
+        return (
+          <div class="flex items-center justify-center min-h-screen bg-slate-950 p-4">
+            <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl">
+              <button onClick={() => setViewState('landing')} class="text-xs text-slate-400 hover:text-white mb-6 flex items-center gap-1">
+                ← 返回上级
+              </button>
+              <div class="text-center mb-6">
+                <div class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-amber-500/20 text-amber-400 mb-3 border border-amber-500/30">
+                  <i data-lucide="lock" class="w-6 h-6"></i>
+                </div>
+                <h1 class="text-xl font-bold text-white">教师/管理员身份验证</h1>
+                <p class="text-slate-400 text-xs mt-1">请输入后台管理密码</p>
+              </div>
+
+              <form onSubmit={handleAdminVerify} class="space-y-4">
+                <input 
+                  type="password"
+                  required
+                  placeholder="请输入管理员密码"
+                  value={adminPasswordInput}
+                  onChange={(e) => setAdminPasswordInput(e.target.value)}
+                  class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-amber-500"
+                />
+                <button 
+                  type="submit"
+                  class="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded-xl shadow-lg transition text-sm"
+                >
+                  进入管理后台
+                </button>
+              </form>
+            </div>
+          </div>
+        );
+      }
+
+      // 4. 管理员控制面板界面
+      if (!isAuthenticated && viewState === 'admin_panel') {
+        return (
+          <div class="flex items-center justify-center min-h-screen bg-slate-950 p-4">
+            <div class="max-w-lg w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl space-y-6">
+              <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                  <i data-lucide="shield-check" class="text-amber-400"></i> 后台管理中心
+                </h3>
+                <button onClick={() => setViewState('landing')} class="text-xs text-slate-400 hover:text-white px-3 py-1 bg-slate-800 rounded-lg">退出后台</button>
+              </div>
+
+              {/* API Key 设置 */}
+              <div class="space-y-2">
+                <label class="block text-xs font-semibold text-slate-300">🔑 绑定的 OpenAI API Key (大模型算力)</label>
+                <form onSubmit={handleSaveApiKey} class="flex gap-2">
+                  <input 
+                    type="password"
+                    placeholder="sk-..."
+                    value={tempApiKeyInput}
+                    onChange={(e) => setTempApiKeyInput(e.target.value)}
+                    class="flex-1 px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
+                  />
+                  <button type="submit" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-medium">保存 Key</button>
+                </form>
+              </div>
+
+              {/* 白名单管理 */}
+              <div class="space-y-2 pt-2 border-t border-slate-800">
+                <label class="block text-xs font-semibold text-slate-300">📧 客户白名单管理 (添加学生邮箱)</label>
+                <form onSubmit={handleAddEmail} class="flex gap-2">
+                  <input 
+                    type="email"
+                    placeholder="student@gmail.com"
+                    value={newEmailInput}
+                    onChange={(e) => setNewEmailInput(e.target.value)}
+                    class="flex-1 px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
+                  />
+                  <button type="submit" class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-medium">添加授权</button>
+                </form>
+
+                <div class="max-h-40 overflow-y-auto space-y-1.5 pt-2">
+                  {whitelist.map((email) => (
+                    <div key={email} class="flex items-center justify-between bg-slate-800/60 px-3 py-1.5 rounded-lg text-xs text-slate-200 border border-slate-700/50">
+                      <span>{email}</span>
+                      <button onClick={() => setWhitelist(whitelist.filter(e => e !== email))} class="text-rose-400 hover:text-rose-300 text-xs">移除</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div class="pt-2">
+                <button 
+                  onClick={() => {
+                    setUserEmail('naixinli08@gmail.com');
+                    setIsAuthenticated(true);
+                  }}
+                  class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-medium"
+                >
+                  🚀 以管理员身份直接进入写作助手
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // 5. 聊天主界面
       return (
         <div class="flex h-screen bg-slate-950 overflow-hidden">
-          {/* 左侧控制栏 */}
           <div class="w-80 bg-slate-900 border-r border-slate-800 flex flex-col justify-between p-5 hidden md:flex">
             <div>
               <div class="flex items-center gap-3 mb-6">
@@ -346,32 +379,33 @@
 
               <div class="space-y-3">
                 <div class="p-3 bg-slate-800/50 border border-slate-700/50 rounded-xl">
-                  <div class="text-xs text-slate-400 mb-1">当前授权身份</div>
+                  <div class="text-xs text-slate-400 mb-1">当前登录身份</div>
                   <div class="text-sm font-medium text-emerald-400 truncate">{userEmail}</div>
                 </div>
 
                 <div class="p-3 bg-slate-800/30 border border-slate-800 rounded-xl text-xs text-slate-400 space-y-2">
-                  <div class="font-semibold text-slate-300">💡 算力与规范模式:</div>
+                  <div class="font-semibold text-slate-300">💡 运行状态:</div>
                   <div class="flex items-center gap-2">
                     <span class={`w-2 h-2 rounded-full ${apiKey ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
-                    <span>模式: {apiKey ? 'AI大模型全速引擎' : '演示模式 (未绑定Key)'}</span>
+                    <span>引擎: {apiKey ? 'GPT-4o 全速算力' : '演示模式'}</span>
                   </div>
-                  <div>• 规范支持: 墨大 APA7 引用</div>
+                  <div>• 规范支持: 墨大 APA7</div>
                   <div>• 文献指标: 至少20篇英文来源</div>
-                  <div>• 篇幅标准: 本科1500字 / 研究生2000字</div>
                 </div>
               </div>
             </div>
 
             <button 
-              onClick={() => setIsAuthenticated(false)}
+              onClick={() => {
+                setIsAuthenticated(false);
+                setViewState('landing');
+              }}
               class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium border border-slate-700 transition"
             >
-              退出授权登录
+              退出登录
             </button>
           </div>
 
-          {/* 中间对话区 */}
           <div class="flex-1 flex flex-col h-full bg-slate-950 relative">
             <header class="h-16 border-b border-slate-800 bg-slate-900/50 backdrop-blur px-6 flex items-center justify-between">
               <div class="flex items-center gap-2">
@@ -432,7 +466,6 @@
             </div>
           </div>
 
-          {/* 右侧状态卡 */}
           {showStateCard && (
             <div class="w-80 bg-slate-900 border-l border-slate-800 p-5 hidden lg:block overflow-y-auto">
               <h3 class="text-sm font-bold text-slate-200 mb-4 pb-2 border-b border-slate-800 flex items-center gap-2">
@@ -454,10 +487,6 @@
                 <div>
                   <span class="text-slate-400 block mb-1">有效文献核对进度</span>
                   <div class="p-2.5 bg-slate-800/60 border border-slate-700/50 rounded-lg text-slate-200">0 / 至少20篇</div>
-                </div>
-                <div>
-                  <span class="text-slate-400 block mb-1">全文篇幅预算</span>
-                  <div class="p-2.5 bg-slate-800/60 border border-slate-700/50 rounded-lg text-slate-200">预算评估中</div>
                 </div>
               </div>
             </div>
